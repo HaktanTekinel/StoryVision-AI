@@ -1,23 +1,26 @@
-const { buildStoryPromptPayload } = require("../utils/promptBuilder");
+const {
+  buildStoryPromptPayload,
+  buildStoryJsonInstruction,
+} = require("../utils/promptBuilder");
+const { generateStructuredText } = require("./geminiService");
 
-// Demo hikaye metni icin baslik olusturur
-const buildDemoTitle = ({ topic, genre }) => {
-  return `${genre} Hikayesi: ${topic}`;
+const normalizeAiStory = (story, input) => {
+  const title = String(story.title || "").trim();
+  const content = String(story.content || "").trim();
+
+  if (!title || !content) {
+    throw new Error("AI hikaye yaniti title ve content alanlarini icermeli.");
+  }
+
+  return {
+    title,
+    content,
+    prompt: buildStoryPromptPayload(input),
+    provider: "gemini",
+  };
 };
 
-// Demo hikaye metni icin icerik olusturur
-const buildDemoContent = ({ topic, character, genre, length }) => {
-  const intro = `${character}, ${topic} ile ilgili beklenmedik bir yolculuga cikti.`;
-  const middle = `Yol boyunca ${genre} atmosferi giderek belirginlesti ve her adim yeni bir sirri ortaya cikardi.`;
-  const ending = `Uzunluk seviyesi ${length} olarak planlanan bu hikaye, ${character} icin unutulmaz bir sonla tamamlandi.`;
-
-  return `${intro} ${middle} ${ending}`;
-};
-
-// Hikaye demo verisini hazirlar
 const getDemoStory = async ({ topic, character, genre, length }) => {
-  await new Promise((resolve) => setTimeout(resolve, 1500));
-
   const promptPayload = buildStoryPromptPayload({
     topic,
     character,
@@ -25,11 +28,13 @@ const getDemoStory = async ({ topic, character, genre, length }) => {
     length,
   });
 
-  return {
-    title: buildDemoTitle({ topic, genre }),
-    content: buildDemoContent({ topic, character, genre, length }),
-    prompt: promptPayload,
-  };
+  const aiStory = await generateStructuredText({
+    systemPrompt: `${promptPayload.systemPrompt}\n\n${buildStoryJsonInstruction()}`,
+    userPrompt: promptPayload.userPrompt,
+    schemaName: '"title", "content"',
+  });
+
+  return normalizeAiStory(aiStory, { topic, character, genre, length });
 };
 
 module.exports = {

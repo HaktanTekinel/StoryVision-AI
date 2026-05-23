@@ -1,61 +1,72 @@
 const mediaService = require("../services/mediaService");
+const asyncHandler = require("../utils/asyncHandler");
+const AppError = require("../errors/AppError");
+const { sendSuccess } = require("../utils/apiResponse");
+const {
+  validateMediaImageInput,
+  validateMediaAudioInput,
+  validateMediaVideoInput,
+} = require("../utils/promptValidator");
 
 // Demo gorsel talebini yonetir
-const getDemoImage = async (req, res) => {
-  try {
-    const { topic = "kayip zaman", genre = "fantastik" } = req.query;
+const getDemoImage = asyncHandler(async (req, res) => {
+  const { isValid, errors, data } = validateMediaImageInput({
+    ...req.query,
+    ...req.body,
+  });
 
-    const result = await mediaService.getDemoImage({ topic, genre });
-
-    return res.status(200).json({
-      success: true,
-      data: result,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "Demo gorsel olusturulurken bir hata olustu.",
-    });
+  if (!isValid) {
+    throw new AppError(`Gecersiz gorsel girdileri: ${errors.join(" ")}`, 400);
   }
-};
+
+  const result = await mediaService.getDemoImage(data);
+
+  return sendSuccess(res, {
+    statusCode: 200,
+    message: "Demo gorsel talebi olusturuldu.",
+    data: result,
+  });
+});
 
 // Demo ses talebini yonetir
-const getDemoAudio = async (req, res) => {
-  try {
-    const { topic = "kayip zaman", character = "genc bir yazar" } = req.query;
+const getDemoAudio = asyncHandler(async (req, res) => {
+  const { isValid, errors, data } = validateMediaAudioInput({
+    ...req.query,
+    ...req.body,
+  });
 
-    const result = await mediaService.getDemoAudio({ topic, character });
-
-    return res.status(200).json({
-      success: true,
-      data: result,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "Demo ses olusturulurken bir hata olustu.",
-    });
+  if (!isValid) {
+    throw new AppError(`Gecersiz ses girdileri: ${errors.join(" ")}`, 400);
   }
-};
+
+  const result = await mediaService.getDemoAudio(data);
+
+  return sendSuccess(res, {
+    statusCode: 200,
+    message: "Demo ses talebi olusturuldu.",
+    data: result,
+  });
+});
 
 // Demo video talebini yonetir
-const getDemoVideo = async (req, res) => {
-  try {
-    const { topic = "kayip zaman", genre = "fantastik", length = "orta" } = req.query;
+const getDemoVideo = asyncHandler(async (req, res) => {
+  const { isValid, errors, data } = validateMediaVideoInput({
+    ...req.query,
+    ...req.body,
+  });
 
-    const result = await mediaService.getDemoVideo({ topic, genre, length });
-
-    return res.status(200).json({
-      success: true,
-      data: result,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "Demo video olusturulurken bir hata olustu.",
-    });
+  if (!isValid) {
+    throw new AppError(`Gecersiz video girdileri: ${errors.join(" ")}`, 400);
   }
-};
+
+  const result = await mediaService.getDemoVideo(data);
+
+  return sendSuccess(res, {
+    statusCode: 200,
+    message: "Demo video talebi olusturuldu.",
+    data: result,
+  });
+});
 
 module.exports = {
   getDemoImage,

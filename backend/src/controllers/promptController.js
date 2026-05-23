@@ -1,32 +1,32 @@
 const promptService = require("../services/promptService");
+const asyncHandler = require("../utils/asyncHandler");
+const AppError = require("../errors/AppError");
+const { sendSuccess } = require("../utils/apiResponse");
 const { validateStoryPromptInput } = require("../utils/promptValidator");
 
-// Demo prompt endpointi icin controller
-const getDemoPrompt = async (req, res) => {
-  try {
-    const { isValid, errors, data } = validateStoryPromptInput(req.query);
-
-    if (!isValid) {
-      return res.status(400).json({
-        success: false,
-        message: "Gecersiz prompt girdileri.",
-        errors,
-      });
-    }
-
-    const result = await promptService.getDemoPrompt(data);
-
-    return res.status(200).json({
-      success: true,
-      data: result,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "Demo prompt olusturulurken bir hata olustu.",
-    });
-  }
+const collectPromptInput = (req) => {
+  return {
+    ...req.query,
+    ...req.body,
+  };
 };
+
+// Demo prompt endpointi icin controller
+const getDemoPrompt = asyncHandler(async (req, res) => {
+  const { isValid, errors, data } = validateStoryPromptInput(collectPromptInput(req));
+
+  if (!isValid) {
+    throw new AppError(`Gecersiz prompt girdileri: ${errors.join(" ")}`, 400);
+  }
+
+  const result = await promptService.getDemoPrompt(data);
+
+  return sendSuccess(res, {
+    statusCode: 200,
+    message: "Prompt paketi olusturuldu.",
+    data: result,
+  });
+});
 
 module.exports = {
   getDemoPrompt,

@@ -1,4 +1,7 @@
 const storyService = require("../services/storyService");
+const asyncHandler = require("../utils/asyncHandler");
+const AppError = require("../errors/AppError");
+const { sendSuccess } = require("../utils/apiResponse");
 const { validateStoryPromptInput } = require("../utils/promptValidator");
 
 // Istekten gelen query ve body alanlarini tek yerde toplar
@@ -10,31 +13,21 @@ const collectStoryInput = (req) => {
 };
 
 // Demo hikaye endpointi icin controller
-const getDemoStory = async (req, res) => {
-  try {
-    const { isValid, errors, data } = validateStoryPromptInput(collectStoryInput(req));
+const getDemoStory = asyncHandler(async (req, res) => {
+  const { isValid, errors, data } = validateStoryPromptInput(collectStoryInput(req));
 
-    if (!isValid) {
-      return res.status(400).json({
-        success: false,
-        message: "Gecersiz hikaye girdileri.",
-        errors,
-      });
-    }
-
-    const story = await storyService.getDemoStory(data);
-
-    return res.status(200).json({
-      success: true,
-      data: story,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "Demo hikaye olusturulurken bir hata olustu.",
-    });
+  if (!isValid) {
+    throw new AppError(`Gecersiz hikaye girdileri: ${errors.join(" ")}`, 400);
   }
-};
+
+  const story = await storyService.getDemoStory(data);
+
+  return sendSuccess(res, {
+    statusCode: 200,
+    message: "Hikaye olusturuldu.",
+    data: story,
+  });
+});
 
 module.exports = {
   getDemoStory,

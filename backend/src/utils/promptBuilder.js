@@ -29,6 +29,22 @@ Bana ${genre} turunde, ana karakteri ${character} olan, ${topic} temasini isleye
 `.trim();
 };
 
+const buildStoryJsonInstruction = () => {
+  return `
+Cevabi sadece gecerli JSON olarak ver.
+JSON yapisi su alanlari icermeli:
+{
+  "title": "string",
+  "content": "string"
+}
+
+Kurallar:
+- Baslik kisa ve hikayeye uygun olmali.
+- content alaninda hikaye metni tek bir akista verilmelidir.
+- Markdown, kod blozu, aciklama ve fazladan alan ekleme.
+`.trim();
+};
+
 // Sprint 2'de LLM'e dogrudan gonderilebilecek mesaj paketini uretir
 const buildStoryPromptPayload = ({ topic, character, genre, length }) => {
   const systemPrompt = buildStoryPrompt({ topic, character, genre, length });
@@ -57,7 +73,52 @@ const buildStoryPromptPayload = ({ topic, character, genre, length }) => {
   };
 };
 
+const buildPromptAssistantInstruction = ({ topic, character, genre, length }) => {
+  return `
+Sen deneyimli bir prompt tasarim asistanisin.
+
+Gorevin, verilen hikaye ozellikleri icin daha iyi bir Gemini kullanım prompt paketi uretmek.
+
+Kurallar:
+- Yaniti sadece gecerli JSON olarak ver.
+- Markdown, aciklama ve ekstra metin ekleme.
+- Sistem promptu hikaye uretimini yonetecek kadar acik ve uygulanabilir olsun.
+- Kullanici promptu kisa ve net olsun.
+
+Girdi ozellikleri:
+- Tur: ${genre}
+- Ana karakter: ${character}
+- Konu: ${topic}
+- Uzunluk seviyesi: ${length}
+
+JSON yapisi:
+{
+  "systemPrompt": "string",
+  "userPrompt": "string"
+}
+`.trim();
+};
+
+const buildPromptJsonInstruction = () => {
+  return `
+Cevabi sadece gecerli JSON olarak ver.
+JSON yapisi su alanlari icermeli:
+{
+  "systemPrompt": "string",
+  "userPrompt": "string"
+}
+
+Kurallar:
+- System prompt, modeli hikaye yazmaya yönlendirmeli.
+- User prompt, tek cümlelik kısa bir istek olmali.
+- Markdown, kod blozu ve fazladan alan ekleme.
+`.trim();
+};
+
 module.exports = {
   buildStoryPrompt,
+  buildStoryJsonInstruction,
   buildStoryPromptPayload,
+  buildPromptAssistantInstruction,
+  buildPromptJsonInstruction,
 };
