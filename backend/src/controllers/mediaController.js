@@ -18,6 +18,16 @@ const generateStoryImages = asyncHandler(async (req, res) => {
   });
 });
 
+const generateStoryAudio = asyncHandler(async (req, res) => {
+  const result = await mediaService.generateStoryAudio(req.params.id);
+
+  return sendSuccess(res, {
+    statusCode: 200,
+    message: "Hikaye metni sese donusturuldu.",
+    data: result,
+  });
+});
+
 const getDemoImage = asyncHandler(async (req, res) => {
   const { isValid, errors, data } = validateMediaImageInput({
     ...req.query,
@@ -77,6 +87,7 @@ const getDemoVideo = asyncHandler(async (req, res) => {
 
 module.exports = {
   generateStoryImages,
+  generateStoryAudio,
   getDemoImage,
   getDemoAudio,
   getDemoVideo,

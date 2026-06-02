@@ -71,8 +71,13 @@ const mapStoryRow = (row) => {
 
     audioUrl: row.audio_url,
     audioPath: row.audio_path,
+    audioStatus: row.audio_status,
+    audioDurationSeconds: row.audio_duration_seconds,
+
     videoUrl: row.video_url,
     videoPath: row.video_path,
+    videoStatus: row.video_status,
+
     subtitleUrl: row.subtitle_url,
     subtitlePath: row.subtitle_path,
     transitionEffect: row.transition_effect,
@@ -91,11 +96,14 @@ const listStories = async () => {
       s.*,
       a.audio_url,
       a.audio_path,
+      a.status AS audio_status,
+      a.duration_seconds AS audio_duration_seconds,
       v.video_url,
       v.video_path,
       v.subtitle_url,
       v.subtitle_path,
-      v.transition_effect
+      v.transition_effect,
+      v.status AS video_status
     FROM story s
     LEFT JOIN story_audio a ON a.story_id = s.id
     LEFT JOIN story_video v ON v.story_id = s.id
@@ -113,11 +121,14 @@ const getStoryById = async (storyId) => {
       s.*,
       a.audio_url,
       a.audio_path,
+      a.status AS audio_status,
+      a.duration_seconds AS audio_duration_seconds,
       v.video_url,
       v.video_path,
       v.subtitle_url,
       v.subtitle_path,
-      v.transition_effect
+      v.transition_effect,
+      v.status AS video_status
     FROM story s
     LEFT JOIN story_audio a ON a.story_id = s.id
     LEFT JOIN story_video v ON v.story_id = s.id
@@ -264,6 +275,44 @@ const updateSceneImage = async ({ sceneId, imageUrl, imagePath }) => {
   return result.rows[0] ? mapSceneRow(result.rows[0]) : null;
 };
 
+const upsertStoryAudio = async ({
+  storyId,
+  audioUrl,
+  audioPath,
+  narrator,
+  durationSeconds,
+  status,
+  errorMessage = null,
+}) => {
+  const result = await query(
+    `
+    INSERT INTO story_audio (
+      story_id,
+      audio_url,
+      audio_path,
+      narrator,
+      duration_seconds,
+      status,
+      error_message
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    ON CONFLICT (story_id)
+    DO UPDATE SET
+      audio_url = EXCLUDED.audio_url,
+      audio_path = EXCLUDED.audio_path,
+      narrator = EXCLUDED.narrator,
+      duration_seconds = EXCLUDED.duration_seconds,
+      status = EXCLUDED.status,
+      error_message = EXCLUDED.error_message,
+      updated_at = now()
+    RETURNING *
+    `,
+    [storyId, audioUrl, audioPath, narrator, durationSeconds, status, errorMessage]
+  );
+
+  return result.rows[0];
+};
+
 const updateStoryMediaStatus = async ({ storyId, type, status }) => {
   await query(
     `
@@ -336,6 +385,7 @@ module.exports = {
   getStoryById,
   createStory,
   updateSceneImage,
+  upsertStoryAudio,
   updateStoryMediaStatus,
   upsertMediaJob,
   deleteStory,

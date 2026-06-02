@@ -5,7 +5,10 @@ const {
   getStoryById,
   deleteStory,
 } = require("../controllers/storyController");
-const { generateStoryImages } = require("../controllers/mediaController");
+const {
+  generateStoryImages,
+  generateStoryAudio,
+} = require("../controllers/mediaController");
 
 const router = express.Router();
 
@@ -13,6 +16,7 @@ router.get("/", getStories);
 router.post("/generate", createStory);
 
 router.post("/:id/images", generateStoryImages);
+router.post("/:id/audio", generateStoryAudio);
 
 router.get("/:id", getStoryById);
 router.delete("/:id", deleteStory);

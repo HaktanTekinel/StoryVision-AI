@@ -1,11 +1,13 @@
 const fs = require("fs/promises");
 const path = require("path");
+const { execFile } = require("child_process");
 const storyRepository = require("../repositories/storyRepository");
 const { env } = require("../config/env");
 const { delay, buildQueuedAssetResponse } = require("./demoHelpers");
 
 const uploadRoot = path.join(__dirname, "../../uploads");
 const imageUploadDir = path.join(uploadRoot, "images");
+const audioUploadDir = path.join(uploadRoot, "audio");
 
 const escapeXml = (value) => {
   return String(value ?? "")
@@ -28,7 +30,7 @@ const slugify = (value) => {
       .replaceAll("ç", "c")
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "")
-      .slice(0, 60) || "scene"
+      .slice(0, 60) || "story"
   );
 };
 
@@ -57,6 +59,24 @@ const splitTextLines = (value, maxLength = 52) => {
 
 const getPublicBaseUrl = () => {
   return process.env.PUBLIC_BASE_URL || `http://127.0.0.1:${env.port}`;
+};
+
+const estimateDurationSeconds = (text) => {
+  const wordCount = String(text || "").split(/\s+/).filter(Boolean).length;
+  return Math.max(8, Math.min(180, Math.ceil(wordCount / 2.2)));
+};
+
+const runCommand = (file, args) => {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, { windowsHide: true }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr || stdout || error.message));
+        return;
+      }
+
+      resolve({ stdout, stderr });
+    });
+  });
 };
 
 const buildSceneSvg = ({ story, scene }) => {
@@ -119,6 +139,7 @@ const buildSceneSvg = ({ story, scene }) => {
 
 const ensureUploadFolders = async () => {
   await fs.mkdir(imageUploadDir, { recursive: true });
+  await fs.mkdir(audioUploadDir, { recursive: true });
 };
 
 const createSceneImageFile = async ({ story, scene }) => {
@@ -137,6 +158,83 @@ const createSceneImageFile = async ({ story, scene }) => {
     imageUrl: publicUrl,
     imagePath: relativePath,
   };
+};
+
+const writeFallbackWav = async ({ outputPath, durationSeconds }) => {
+  const sampleRate = 22050;
+  const channels = 1;
+  const bitsPerSample = 16;
+  const bytesPerSample = bitsPerSample / 8;
+  const totalSamples = sampleRate * Math.max(3, Math.min(durationSeconds, 15));
+  const dataSize = totalSamples * channels * bytesPerSample;
+  const buffer = Buffer.alloc(44 + dataSize);
+
+  buffer.write("RIFF", 0);
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  buffer.write("WAVE", 8);
+  buffer.write("fmt ", 12);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(channels, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(sampleRate * channels * bytesPerSample, 28);
+  buffer.writeUInt16LE(channels * bytesPerSample, 32);
+  buffer.writeUInt16LE(bitsPerSample, 34);
+  buffer.write("data", 36);
+  buffer.writeUInt32LE(dataSize, 40);
+
+  for (let i = 0; i < totalSamples; i += 1) {
+    const t = i / sampleRate;
+    const envelope = Math.sin(Math.PI * (i / totalSamples));
+    const sample = Math.sin(2 * Math.PI * 220 * t) * 0.16 * envelope;
+    buffer.writeInt16LE(Math.floor(sample * 32767), 44 + i * 2);
+  }
+
+  await fs.writeFile(outputPath, buffer);
+};
+
+const synthesizeSpeechWithWindowsTts = async ({ text, outputPath }) => {
+  await ensureUploadFolders();
+
+  const safeName = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const textPath = path.join(audioUploadDir, `${safeName}.txt`);
+  const scriptPath = path.join(audioUploadDir, "_storyvision_tts.ps1");
+
+  const scriptContent = `
+param(
+  [string]$TextPath,
+  [string]$OutputPath
+)
+
+Add-Type -AssemblyName System.Speech
+$text = Get-Content -Path $TextPath -Raw -Encoding UTF8
+
+$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+$synth.Rate = 0
+$synth.Volume = 100
+$synth.SetOutputToWaveFile($OutputPath)
+$synth.Speak($text)
+$synth.Dispose()
+`.trim();
+
+  await fs.writeFile(textPath, text, "utf8");
+  await fs.writeFile(scriptPath, scriptContent, "utf8");
+
+  try {
+    await runCommand("powershell.exe", [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      scriptPath,
+      "-TextPath",
+      textPath,
+      "-OutputPath",
+      outputPath,
+    ]);
+  } finally {
+    await fs.rm(textPath, { force: true });
+  }
 };
 
 const generateStoryImages = async (storyId) => {
@@ -219,6 +317,126 @@ const generateStoryImages = async (storyId) => {
   }
 };
 
+const generateStoryAudio = async (storyId) => {
+  const story = await storyRepository.getStoryById(storyId);
+
+  if (!story) {
+    const error = new Error("Ses uretilecek hikaye bulunamadi.");
+    error.statusCode = 404;
+    error.isOperational = true;
+    throw error;
+  }
+
+  const text = String(story.content || story.text || "").trim();
+
+  if (!text) {
+    const error = new Error("Hikaye metni bos oldugu icin ses uretilemedi.");
+    error.statusCode = 400;
+    error.isOperational = true;
+    throw error;
+  }
+
+  await ensureUploadFolders();
+
+  const durationSeconds = estimateDurationSeconds(text);
+  const fileName = `${story.id}-${slugify(story.title)}-ses.wav`;
+  const absolutePath = path.join(audioUploadDir, fileName);
+  const relativePath = `/uploads/audio/${fileName}`;
+  const publicUrl = `${getPublicBaseUrl()}${relativePath}`;
+
+  await storyRepository.upsertMediaJob({
+    storyId,
+    type: "audio",
+    status: "processing",
+  });
+
+  await storyRepository.updateStoryMediaStatus({
+    storyId,
+    type: "audio",
+    status: "processing",
+  });
+
+  await storyRepository.upsertStoryAudio({
+    storyId,
+    audioUrl: null,
+    audioPath: null,
+    narrator: story.narrator || "Windows TTS",
+    durationSeconds,
+    status: "processing",
+  });
+
+  try {
+    try {
+      await synthesizeSpeechWithWindowsTts({
+        text,
+        outputPath: absolutePath,
+      });
+    } catch (ttsError) {
+      console.warn("Windows TTS basarisiz oldu, fallback wav olusturuluyor:", ttsError.message);
+
+      await writeFallbackWav({
+        outputPath: absolutePath,
+        durationSeconds,
+      });
+    }
+
+    await storyRepository.upsertStoryAudio({
+      storyId,
+      audioUrl: publicUrl,
+      audioPath: relativePath,
+      narrator: story.narrator || "Windows TTS",
+      durationSeconds,
+      status: "ready",
+    });
+
+    await storyRepository.upsertMediaJob({
+      storyId,
+      type: "audio",
+      status: "ready",
+    });
+
+    await storyRepository.updateStoryMediaStatus({
+      storyId,
+      type: "audio",
+      status: "ready",
+    });
+
+    return {
+      storyId,
+      status: "ready",
+      audioUrl: publicUrl,
+      audioPath: relativePath,
+      durationSeconds,
+      narrator: story.narrator || "Windows TTS",
+    };
+  } catch (error) {
+    await storyRepository.upsertStoryAudio({
+      storyId,
+      audioUrl: null,
+      audioPath: null,
+      narrator: story.narrator || "Windows TTS",
+      durationSeconds,
+      status: "failed",
+      errorMessage: error.message,
+    });
+
+    await storyRepository.upsertMediaJob({
+      storyId,
+      type: "audio",
+      status: "failed",
+      errorMessage: error.message,
+    });
+
+    await storyRepository.updateStoryMediaStatus({
+      storyId,
+      type: "audio",
+      status: "failed",
+    });
+
+    throw error;
+  }
+};
+
 const getDemoImage = async ({ topic, genre }) => {
   await delay(1200);
 
@@ -248,6 +466,7 @@ const getDemoVideo = async ({ topic, genre, length }) => {
 
 module.exports = {
   generateStoryImages,
+  generateStoryAudio,
   getDemoImage,
   getDemoAudio,
   getDemoVideo,
