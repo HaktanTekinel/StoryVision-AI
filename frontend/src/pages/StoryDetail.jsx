@@ -29,15 +29,27 @@ function getScenes(story) {
 }
 
 function getImageUrl(scene) {
-  return scene.url || scene.imageUrl || scene.path || scene.filePath;
+  return scene.url || scene.imageUrl || scene.image_url || scene.path || scene.filePath;
 }
 
 function getAudioUrl(story) {
-  return story.audioUrl || story.audioPath || story.voiceUrl;
+  return story.audioUrl || story.audio_url || story.audioPath || story.audio_path || story.voiceUrl;
 }
 
 function getVideoUrl(story) {
-  return story.videoUrl || story.videoPath;
+  return story.videoUrl || story.video_url || story.videoPath || story.video_path;
+}
+
+function getSubtitleUrl(story) {
+  return story.subtitleUrl || story.subtitle_url || story.subtitlePath || story.subtitle_path;
+}
+
+function withCacheBust(url) {
+  if (!url) return "";
+
+  const separator = String(url).includes("?") ? "&" : "?";
+
+  return `${url}${separator}v=${Date.now()}`;
 }
 
 export default function StoryDetail() {
@@ -71,8 +83,14 @@ export default function StoryDetail() {
 
   const paragraphs = useMemo(() => (story ? getParagraphs(story) : []), [story]);
   const scenes = useMemo(() => (story ? getScenes(story) : []), [story]);
+
   const audioUrl = story ? getAudioUrl(story) : "";
   const videoUrl = story ? getVideoUrl(story) : "";
+  const subtitleUrl = story ? getSubtitleUrl(story) : "";
+
+ const audioPlayerUrl = story ? withCacheBust(audioUrl) : "";
+const videoPlayerUrl = story ? withCacheBust(videoUrl) : "";
+const subtitlePlayerUrl = story ? withCacheBust(subtitleUrl) : "";
 
   async function handleGenerate(step) {
     const actions = {
@@ -153,7 +171,9 @@ export default function StoryDetail() {
           <div className="reader-meta">
             <Badge>{story.genre || "Hikâye"}</Badge>
             {story.tone && <Badge>{story.tone}</Badge>}
-            {(story.createdAt || story.created_at) && <span>{formatDate(story.createdAt || story.created_at)}</span>}
+            {(story.createdAt || story.created_at) && (
+              <span>{formatDate(story.createdAt || story.created_at)}</span>
+            )}
           </div>
 
           <h2>Hikâye Metni</h2>
@@ -168,7 +188,7 @@ export default function StoryDetail() {
         <aside className="story-sidebar">
           <Card className="mini-panel">
             <span>Karakter</span>
-            <strong>{story.character || "Belirtilmedi"}</strong>
+            <strong>{story.character || story.characterName || "Belirtilmedi"}</strong>
           </Card>
 
           <Card className="mini-panel">
@@ -200,7 +220,10 @@ export default function StoryDetail() {
                 <article className="scene-card" key={scene.id || scene.title || imageUrl || index}>
                   <div className="scene-image">
                     {imageUrl ? (
-                      <img src={imageUrl} alt={scene.title || `Sahne ${index + 1}`} />
+                      <img
+                        src={withCacheBust(imageUrl, story)}
+                        alt={scene.title || `Sahne ${index + 1}`}
+                      />
                     ) : (
                       <span>{scene.title || `Sahne ${index + 1}`}</span>
                     )}
@@ -229,14 +252,39 @@ export default function StoryDetail() {
         {audioUrl && (
           <Card className="loading-card">
             <h3>Seslendirme</h3>
-            <audio controls src={audioUrl} />
+            <audio key={audioPlayerUrl} controls src={audioPlayerUrl} />
+            {(story.audioStatus || story.audio_status || story.audioDurationSeconds) && (
+              <p>
+                Durum: {story.audioStatus || story.audio_status || "hazır"}
+                {story.audioDurationSeconds ? ` • Süre: ${story.audioDurationSeconds} sn` : ""}
+              </p>
+            )}
           </Card>
         )}
 
         {videoUrl && (
           <Card className="loading-card">
             <h3>Video</h3>
-            <video controls src={videoUrl} className="video-player" />
+            <video key={videoPlayerUrl} controls src={videoPlayerUrl} className="video-player">
+              {subtitleUrl && (
+                <track
+                  kind="subtitles"
+                  src={subtitlePlayerUrl}
+                  srcLang="tr"
+                  label="Türkçe"
+                  default
+                />
+              )}
+            </video>
+          </Card>
+        )}
+
+        {subtitleUrl && (
+          <Card className="loading-card">
+            <h3>Altyazı</h3>
+            <a href={subtitlePlayerUrl} target="_blank" rel="noreferrer">
+              Altyazı dosyasını aç
+            </a>
           </Card>
         )}
       </section>

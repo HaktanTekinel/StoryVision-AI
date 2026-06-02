@@ -58,7 +58,7 @@ const splitTextLines = (value, maxLength = 52) => {
 };
 
 const getPublicBaseUrl = () => {
-  return process.env.PUBLIC_BASE_URL || `http://127.0.0.1:${env.port}`;
+  return env.publicBaseUrl || process.env.PUBLIC_BASE_URL || `http://127.0.0.1:${env.port}`;
 };
 
 const estimateDurationSeconds = (text) => {
@@ -77,6 +77,33 @@ const runCommand = (file, args) => {
       resolve({ stdout, stderr });
     });
   });
+};
+
+const ensureUploadFolders = async () => {
+  await fs.mkdir(imageUploadDir, { recursive: true });
+  await fs.mkdir(audioUploadDir, { recursive: true });
+};
+
+const downloadBuffer = async (url, options = {}) => {
+  if (typeof fetch !== "function") {
+    throw new Error("Global fetch bulunamadi. Node.js surumu eski olabilir.");
+  }
+
+  const response = await fetch(url, options);
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(
+      `Dis servis hatasi: ${response.status} ${response.statusText} ${text}`.trim()
+    );
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+
+  return {
+    buffer: Buffer.from(arrayBuffer),
+    contentType: response.headers.get("content-type") || "",
+  };
 };
 
 const buildSceneSvg = ({ story, scene }) => {
@@ -137,15 +164,11 @@ const buildSceneSvg = ({ story, scene }) => {
 `.trim();
 };
 
-const ensureUploadFolders = async () => {
-  await fs.mkdir(imageUploadDir, { recursive: true });
-  await fs.mkdir(audioUploadDir, { recursive: true });
-};
-
-const createSceneImageFile = async ({ story, scene }) => {
+const createSceneSvgFallback = async ({ story, scene }) => {
   await ensureUploadFolders();
 
-  const fileName = `${story.id}-${scene.sceneOrder}-${slugify(scene.title)}.svg`;
+  const uniqueSuffix = Date.now();
+  const fileName = `${story.id}-${scene.sceneOrder}-${slugify(scene.title)}-${uniqueSuffix}.svg`;
   const absolutePath = path.join(imageUploadDir, fileName);
   const relativePath = `/uploads/images/${fileName}`;
   const publicUrl = `${getPublicBaseUrl()}${relativePath}`;
@@ -157,6 +180,46 @@ const createSceneImageFile = async ({ story, scene }) => {
   return {
     imageUrl: publicUrl,
     imagePath: relativePath,
+    provider: "svg-fallback",
+  };
+};
+
+const createSceneImageWithPollinations = async ({ story, scene }) => {
+  await ensureUploadFolders();
+
+  const prompt =
+    `${scene.prompt || scene.description || story.title}. ` +
+    `cinematic, detailed, ${story.visualStyle || "storybook style"}, ` +
+    `no text, no watermark`;
+
+  const uniqueSuffix = Date.now();
+  const fileName = `${story.id}-${scene.sceneOrder}-${slugify(scene.title)}-${uniqueSuffix}.jpg`;
+  const absolutePath = path.join(imageUploadDir, fileName);
+  const relativePath = `/uploads/images/${fileName}`;
+  const publicUrl = `${getPublicBaseUrl()}${relativePath}`;
+
+  const pollinationsBaseUrl =
+    env.pollinationsBaseUrl || process.env.POLLINATIONS_BASE_URL || "https://image.pollinations.ai";
+  const pollinationsModel =
+    env.pollinationsModel || process.env.POLLINATIONS_MODEL || "flux";
+
+  const requestUrl =
+    `${pollinationsBaseUrl}/prompt/${encodeURIComponent(prompt)}` +
+    `?width=1280&height=720&model=${encodeURIComponent(pollinationsModel)}` +
+    `&nologo=true&private=true&enhance=true&seed=${uniqueSuffix}`;
+
+  const { buffer, contentType } = await downloadBuffer(requestUrl);
+
+  if (!contentType.includes("image")) {
+    throw new Error("Pollinations gorsel yerine farkli bir yanit dondurdu.");
+  }
+
+  await fs.writeFile(absolutePath, buffer);
+
+  return {
+    imageUrl: publicUrl,
+    imagePath: relativePath,
+    provider: "pollinations",
   };
 };
 
@@ -237,6 +300,46 @@ $synth.Dispose()
   }
 };
 
+const synthesizeSpeechWithElevenLabs = async ({ text, outputPath }) => {
+  const apiKey = env.elevenlabsApiKey || process.env.ELEVENLABS_API_KEY || "";
+  const voiceId = env.elevenlabsVoiceId || process.env.ELEVENLABS_VOICE_ID || "";
+  const model = env.elevenlabsModel || process.env.ELEVENLABS_MODEL || "eleven_multilingual_v2";
+  const baseUrl = env.elevenlabsBaseUrl || process.env.ELEVENLABS_BASE_URL || "https://api.elevenlabs.io";
+
+  if (!apiKey.trim()) {
+    throw new Error("ELEVENLABS_API_KEY tanimli degil.");
+  }
+
+  if (!voiceId.trim()) {
+    throw new Error("ELEVENLABS_VOICE_ID tanimli degil.");
+  }
+
+  const requestUrl = `${baseUrl}/v1/text-to-speech/${voiceId}`;
+
+  const { buffer, contentType } = await downloadBuffer(requestUrl, {
+    method: "POST",
+    headers: {
+      "xi-api-key": apiKey,
+      "Content-Type": "application/json; charset=utf-8",
+      Accept: "audio/mpeg",
+    },
+    body: JSON.stringify({
+      text,
+      model_id: model,
+      voice_settings: {
+        stability: 0.45,
+        similarity_boost: 0.75,
+      },
+    }),
+  });
+
+  if (!contentType.includes("audio")) {
+    throw new Error("ElevenLabs ses yerine farkli bir yanit dondurdu.");
+  }
+
+  await fs.writeFile(outputPath, buffer);
+};
+
 const generateStoryImages = async (storyId) => {
   const story = await storyRepository.getStoryById(storyId);
 
@@ -268,9 +371,29 @@ const generateStoryImages = async (storyId) => {
 
   try {
     const updatedScenes = [];
+    const providers = [];
 
     for (const scene of story.scenes.slice(0, 3)) {
-      const image = await createSceneImageFile({ story, scene });
+      let image;
+
+      try {
+        const imageProvider = env.imageProvider || process.env.IMAGE_PROVIDER || "pollinations";
+
+        if (imageProvider === "pollinations") {
+          image = await createSceneImageWithPollinations({ story, scene });
+        } else {
+          image = await createSceneSvgFallback({ story, scene });
+        }
+      } catch (providerError) {
+        console.warn(
+          "Gorsel AI saglayicisi basarisiz oldu, SVG fallback kullaniliyor:",
+          providerError.message
+        );
+
+        image = await createSceneSvgFallback({ story, scene });
+      }
+
+      providers.push(image.provider);
 
       const updatedScene = await storyRepository.updateSceneImage({
         sceneId: scene.id,
@@ -296,6 +419,7 @@ const generateStoryImages = async (storyId) => {
     return {
       storyId,
       status: "ready",
+      provider: providers.includes("pollinations") ? "pollinations" : "svg-fallback",
       count: updatedScenes.length,
       images: updatedScenes,
     };
@@ -339,10 +463,18 @@ const generateStoryAudio = async (storyId) => {
   await ensureUploadFolders();
 
   const durationSeconds = estimateDurationSeconds(text);
-  const fileName = `${story.id}-${slugify(story.title)}-ses.wav`;
-  const absolutePath = path.join(audioUploadDir, fileName);
-  const relativePath = `/uploads/audio/${fileName}`;
-  const publicUrl = `${getPublicBaseUrl()}${relativePath}`;
+  const uniqueSuffix = Date.now();
+
+  const mp3FileName = `${story.id}-${slugify(story.title)}-${uniqueSuffix}-ses.mp3`;
+  const wavFileName = `${story.id}-${slugify(story.title)}-${uniqueSuffix}-ses.wav`;
+
+  const mp3AbsolutePath = path.join(audioUploadDir, mp3FileName);
+  const mp3RelativePath = `/uploads/audio/${mp3FileName}`;
+  const mp3PublicUrl = `${getPublicBaseUrl()}${mp3RelativePath}`;
+
+  const wavAbsolutePath = path.join(audioUploadDir, wavFileName);
+  const wavRelativePath = `/uploads/audio/${wavFileName}`;
+  const wavPublicUrl = `${getPublicBaseUrl()}${wavRelativePath}`;
 
   await storyRepository.upsertMediaJob({
     storyId,
@@ -360,31 +492,77 @@ const generateStoryAudio = async (storyId) => {
     storyId,
     audioUrl: null,
     audioPath: null,
-    narrator: story.narrator || "Windows TTS",
+    narrator: story.narrator || "StoryVision TTS",
     durationSeconds,
     status: "processing",
   });
 
   try {
-    try {
-      await synthesizeSpeechWithWindowsTts({
-        text,
-        outputPath: absolutePath,
-      });
-    } catch (ttsError) {
-      console.warn("Windows TTS basarisiz oldu, fallback wav olusturuluyor:", ttsError.message);
+    let finalAudioUrl = null;
+    let finalAudioPath = null;
+    let narrator = story.narrator || "StoryVision TTS";
+    let provider = env.ttsProvider || process.env.TTS_PROVIDER || "windows";
 
-      await writeFallbackWav({
-        outputPath: absolutePath,
-        durationSeconds,
-      });
+    try {
+      if (provider === "elevenlabs") {
+        await synthesizeSpeechWithElevenLabs({
+          text,
+          outputPath: mp3AbsolutePath,
+        });
+
+        finalAudioUrl = mp3PublicUrl;
+        finalAudioPath = mp3RelativePath;
+        narrator = "ElevenLabs";
+      } else {
+        await synthesizeSpeechWithWindowsTts({
+          text,
+          outputPath: wavAbsolutePath,
+        });
+
+        finalAudioUrl = wavPublicUrl;
+        finalAudioPath = wavRelativePath;
+        narrator = "Windows TTS";
+        provider = "windows";
+      }
+    } catch (providerError) {
+      console.warn(
+        "Ana ses saglayicisi basarisiz oldu, Windows TTS fallback deneniyor:",
+        providerError.message
+      );
+
+      try {
+        await synthesizeSpeechWithWindowsTts({
+          text,
+          outputPath: wavAbsolutePath,
+        });
+
+        finalAudioUrl = wavPublicUrl;
+        finalAudioPath = wavRelativePath;
+        narrator = "Windows TTS";
+        provider = "windows";
+      } catch (windowsError) {
+        console.warn(
+          "Windows TTS de basarisiz oldu, fallback wav olusturuluyor:",
+          windowsError.message
+        );
+
+        await writeFallbackWav({
+          outputPath: wavAbsolutePath,
+          durationSeconds,
+        });
+
+        finalAudioUrl = wavPublicUrl;
+        finalAudioPath = wavRelativePath;
+        narrator = "Fallback Wave";
+        provider = "fallback";
+      }
     }
 
     await storyRepository.upsertStoryAudio({
       storyId,
-      audioUrl: publicUrl,
-      audioPath: relativePath,
-      narrator: story.narrator || "Windows TTS",
+      audioUrl: finalAudioUrl,
+      audioPath: finalAudioPath,
+      narrator,
       durationSeconds,
       status: "ready",
     });
@@ -404,17 +582,18 @@ const generateStoryAudio = async (storyId) => {
     return {
       storyId,
       status: "ready",
-      audioUrl: publicUrl,
-      audioPath: relativePath,
+      provider,
+      audioUrl: finalAudioUrl,
+      audioPath: finalAudioPath,
       durationSeconds,
-      narrator: story.narrator || "Windows TTS",
+      narrator,
     };
   } catch (error) {
     await storyRepository.upsertStoryAudio({
       storyId,
       audioUrl: null,
       audioPath: null,
-      narrator: story.narrator || "Windows TTS",
+      narrator: story.narrator || "StoryVision TTS",
       durationSeconds,
       status: "failed",
       errorMessage: error.message,

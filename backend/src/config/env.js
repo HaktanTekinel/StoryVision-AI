@@ -30,6 +30,21 @@ const env = {
   geminiImageModel: process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image",
   geminiTtsModel: process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts",
   geminiTtsVoice: process.env.GEMINI_TTS_VOICE || "Kore",
+
+  imageProvider: process.env.IMAGE_PROVIDER || "pollinations",
+  pollinationsBaseUrl:
+    process.env.POLLINATIONS_BASE_URL || "https://image.pollinations.ai",
+  pollinationsModel: process.env.POLLINATIONS_MODEL || "flux",
+
+  ttsProvider: process.env.TTS_PROVIDER || "windows",
+  elevenlabsApiKey: process.env.ELEVENLABS_API_KEY || "",
+  elevenlabsVoiceId: process.env.ELEVENLABS_VOICE_ID || "",
+  elevenlabsModel: process.env.ELEVENLABS_MODEL || "eleven_multilingual_v2",
+  elevenlabsBaseUrl:
+    process.env.ELEVENLABS_BASE_URL || "https://api.elevenlabs.io",
+
+  publicBaseUrl: process.env.PUBLIC_BASE_URL || "",
+  ffmpegPath: process.env.FFMPEG_PATH || "ffmpeg",
 };
 
 const validateEnv = () => {
@@ -50,6 +65,16 @@ const validateEnv = () => {
   if (!env.geminiApiKey.trim()) {
     console.warn(
       "UYARI: GEMINI_API_KEY tanimli degil. Hikaye uretiminde gecici fallback metin kullanilacak."
+    );
+  }
+
+  if (env.imageProvider === "pollinations") {
+    console.warn("BILGI: Gorsel uretimi Pollinations ile denenip fallback olarak SVG kullanilacak.");
+  }
+
+  if (env.ttsProvider === "elevenlabs" && !env.elevenlabsApiKey.trim()) {
+    console.warn(
+      "UYARI: ELEVENLABS_API_KEY tanimli degil. Ses uretiminde Windows TTS fallback kullanilacak."
     );
   }
 

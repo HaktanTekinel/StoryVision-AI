@@ -7,11 +7,19 @@ function getStatusLabel(isReady, isBusy) {
   return "Bekliyor";
 }
 
+function getActionLabel(item, isReady, isBusy) {
+  if (isBusy) return "Hazırlanıyor...";
+  if (isReady) return `${item.title} Yeniden Oluştur`;
+  return item.action;
+}
+
 export default function MediaPreview({ story, busyStep, onGenerate }) {
   const images = story.images || story.visuals || [];
   const audioUrl = story.audioUrl || story.audioPath || story.voiceUrl;
   const videoUrl = story.videoUrl || story.videoPath;
-  const subtitlesReady = Boolean(story.subtitleUrl || story.subtitlePath || story.production?.subtitles);
+  const subtitlesReady = Boolean(
+    story.subtitleUrl || story.subtitlePath || story.production?.subtitles
+  );
 
   const productionItems = [
     {
@@ -53,7 +61,10 @@ export default function MediaPreview({ story, busyStep, onGenerate }) {
         return (
           <article className="media-box" key={item.key}>
             <div>
-              <Badge variant={isReady ? "success" : "soft"}>{getStatusLabel(isReady, isBusy)}</Badge>
+              <Badge variant={isReady ? "success" : "soft"}>
+                {getStatusLabel(isReady, isBusy)}
+              </Badge>
+
               <h3>{item.title}</h3>
               <p>{item.description}</p>
             </div>
@@ -63,9 +74,9 @@ export default function MediaPreview({ story, busyStep, onGenerate }) {
               variant="secondary"
               size="sm"
               onClick={() => onGenerate(item.key)}
-              disabled={isReady || isBusy}
+              disabled={isBusy}
             >
-              {isBusy ? "Hazırlanıyor..." : isReady ? "Tamamlandı" : item.action}
+              {getActionLabel(item, isReady, isBusy)}
             </Button>
           </article>
         );

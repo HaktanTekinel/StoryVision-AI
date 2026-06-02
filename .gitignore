@@ -141,3 +141,12 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Local environment files
+.env
+.env.local
+backend/.env
+frontend/.env
+
+# Generated media files
+backend/uploads/
