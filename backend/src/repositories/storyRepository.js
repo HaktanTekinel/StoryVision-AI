@@ -22,7 +22,9 @@ const mapSceneRow = (row) => ({
   description: row.description,
   prompt: row.prompt,
   imageUrl: row.image_url,
+  image_url: row.image_url,
   imagePath: row.image_path,
+  image_path: row.image_path,
   mood: row.mood,
   status: row.status,
   createdAt: row.created_at,
@@ -138,10 +140,12 @@ const getStoryById = async (storyId) => {
     [storyId]
   );
 
+  const scenes = sceneResult.rows.map(mapSceneRow);
+
   return {
     ...mapStoryRow(storyResult.rows[0]),
-    scenes: sceneResult.rows.map(mapSceneRow),
-    images: sceneResult.rows.map(mapSceneRow),
+    scenes,
+    images: scenes,
   };
 };
 
@@ -242,6 +246,75 @@ const createStory = async (payload) => {
   }
 };
 
+const updateSceneImage = async ({ sceneId, imageUrl, imagePath }) => {
+  const result = await query(
+    `
+    UPDATE story_scene
+    SET
+      image_url = $2,
+      image_path = $3,
+      status = 'ready',
+      updated_at = now()
+    WHERE id = $1
+    RETURNING *
+    `,
+    [sceneId, imageUrl, imagePath]
+  );
+
+  return result.rows[0] ? mapSceneRow(result.rows[0]) : null;
+};
+
+const updateStoryMediaStatus = async ({ storyId, type, status }) => {
+  await query(
+    `
+    UPDATE story
+    SET
+      media_status_json = jsonb_set(
+        COALESCE(media_status_json, '{}'::jsonb),
+        ARRAY[$2],
+        to_jsonb($3::text),
+        true
+      ),
+      updated_at = now()
+    WHERE id = $1
+    `,
+    [storyId, type, status]
+  );
+};
+
+const upsertMediaJob = async ({ storyId, type, status, errorMessage = null }) => {
+  const existing = await query(
+    `
+    SELECT id
+    FROM media_job
+    WHERE story_id = $1 AND type = $2
+    LIMIT 1
+    `,
+    [storyId, type]
+  );
+
+  if (existing.rows.length > 0) {
+    await query(
+      `
+      UPDATE media_job
+      SET status = $3, error_message = $4, updated_at = now()
+      WHERE story_id = $1 AND type = $2
+      `,
+      [storyId, type, status, errorMessage]
+    );
+
+    return;
+  }
+
+  await query(
+    `
+    INSERT INTO media_job (story_id, type, status, error_message)
+    VALUES ($1, $2, $3, $4)
+    `,
+    [storyId, type, status, errorMessage]
+  );
+};
+
 const deleteStory = async (storyId) => {
   const result = await query(
     `
@@ -259,5 +332,8 @@ module.exports = {
   listStories,
   getStoryById,
   createStory,
+  updateSceneImage,
+  updateStoryMediaStatus,
+  upsertMediaJob,
   deleteStory,
 };

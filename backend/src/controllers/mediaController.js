@@ -8,7 +8,16 @@ const {
   validateMediaVideoInput,
 } = require("../utils/promptValidator");
 
-// Demo gorsel talebini yonetir
+const generateStoryImages = asyncHandler(async (req, res) => {
+  const result = await mediaService.generateStoryImages(req.params.id);
+
+  return sendSuccess(res, {
+    statusCode: 200,
+    message: "Hikaye sahneleri icin gorseller olusturuldu.",
+    data: result,
+  });
+});
+
 const getDemoImage = asyncHandler(async (req, res) => {
   const { isValid, errors, data } = validateMediaImageInput({
     ...req.query,
@@ -28,7 +37,6 @@ const getDemoImage = asyncHandler(async (req, res) => {
   });
 });
 
-// Demo ses talebini yonetir
 const getDemoAudio = asyncHandler(async (req, res) => {
   const { isValid, errors, data } = validateMediaAudioInput({
     ...req.query,
@@ -48,7 +56,6 @@ const getDemoAudio = asyncHandler(async (req, res) => {
   });
 });
 
-// Demo video talebini yonetir
 const getDemoVideo = asyncHandler(async (req, res) => {
   const { isValid, errors, data } = validateMediaVideoInput({
     ...req.query,
@@ -69,6 +76,7 @@ const getDemoVideo = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+  generateStoryImages,
   getDemoImage,
   getDemoAudio,
   getDemoVideo,
