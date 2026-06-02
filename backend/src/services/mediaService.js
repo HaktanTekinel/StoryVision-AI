@@ -17,20 +17,22 @@ const escapeXml = (value) => {
 };
 
 const slugify = (value) => {
-  return String(value ?? "")
-    .toLowerCase()
-    .replaceAll("ı", "i")
-    .replaceAll("ğ", "g")
-    .replaceAll("ü", "u")
-    .replaceAll("ş", "s")
-    .replaceAll("ö", "o")
-    .replaceAll("ç", "c")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60) || "scene";
+  return (
+    String(value ?? "")
+      .toLowerCase()
+      .replaceAll("ı", "i")
+      .replaceAll("ğ", "g")
+      .replaceAll("ü", "u")
+      .replaceAll("ş", "s")
+      .replaceAll("ö", "o")
+      .replaceAll("ç", "c")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "scene"
+  );
 };
 
-const splitTextLines = (value, maxLength = 48) => {
+const splitTextLines = (value, maxLength = 52) => {
   const words = String(value ?? "").split(/\s+/).filter(Boolean);
   const lines = [];
   let currentLine = "";
@@ -61,12 +63,15 @@ const buildSceneSvg = ({ story, scene }) => {
   const title = escapeXml(scene.title || `Sahne ${scene.sceneOrder}`);
   const mood = escapeXml(scene.mood || story.tone || "Sinematik");
   const style = escapeXml(story.visualStyle || "Cinematic");
+  const storyTitle = escapeXml(story.title || "StoryVision AI");
   const promptLines = splitTextLines(scene.prompt || scene.description || "", 54);
 
   const renderedPrompt = promptLines
     .map((line, index) => {
-      const y = 440 + index * 34;
-      return `<text x="80" y="${y}" font-size="24" fill="#f8fafc">${escapeXml(line)}</text>`;
+      const y = 445 + index * 32;
+      return `<text x="82" y="${y}" font-size="23" fill="#f8fafc" font-family="Arial, sans-serif">${escapeXml(
+        line
+      )}</text>`;
     })
     .join("\n");
 
@@ -74,12 +79,12 @@ const buildSceneSvg = ({ story, scene }) => {
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#111827"/>
-      <stop offset="50%" stop-color="#312e81"/>
+      <stop offset="0%" stop-color="#020617"/>
+      <stop offset="45%" stop-color="#312e81"/>
       <stop offset="100%" stop-color="#0f172a"/>
     </linearGradient>
-    <radialGradient id="glow" cx="50%" cy="40%" r="60%">
-      <stop offset="0%" stop-color="#facc15" stop-opacity="0.45"/>
+    <radialGradient id="glow" cx="50%" cy="38%" r="62%">
+      <stop offset="0%" stop-color="#facc15" stop-opacity="0.42"/>
       <stop offset="55%" stop-color="#38bdf8" stop-opacity="0.18"/>
       <stop offset="100%" stop-color="#020617" stop-opacity="0"/>
     </radialGradient>
@@ -88,22 +93,26 @@ const buildSceneSvg = ({ story, scene }) => {
   <rect width="1280" height="720" fill="url(#bg)"/>
   <rect width="1280" height="720" fill="url(#glow)"/>
 
-  <circle cx="1030" cy="130" r="115" fill="#facc15" opacity="0.18"/>
-  <circle cx="210" cy="585" r="170" fill="#38bdf8" opacity="0.13"/>
-  <path d="M0 620 C210 520, 370 700, 610 585 C820 485, 980 600, 1280 500 L1280 720 L0 720 Z" fill="#020617" opacity="0.55"/>
+  <circle cx="1040" cy="132" r="122" fill="#facc15" opacity="0.18"/>
+  <circle cx="218" cy="590" r="175" fill="#38bdf8" opacity="0.13"/>
+  <circle cx="1010" cy="620" r="210" fill="#a855f7" opacity="0.10"/>
 
-  <rect x="58" y="58" width="1164" height="604" rx="34" fill="#020617" opacity="0.52"/>
+  <path d="M0 620 C210 520, 370 700, 610 585 C820 485, 980 600, 1280 500 L1280 720 L0 720 Z" fill="#020617" opacity="0.58"/>
+
+  <rect x="58" y="58" width="1164" height="604" rx="34" fill="#020617" opacity="0.54"/>
   <rect x="74" y="74" width="1132" height="572" rx="26" fill="none" stroke="#e0f2fe" stroke-width="2" opacity="0.25"/>
 
-  <text x="80" y="135" font-size="26" fill="#93c5fd" font-family="Arial, sans-serif">STORYVISION AI</text>
-  <text x="80" y="205" font-size="54" font-weight="700" fill="#ffffff" font-family="Arial, sans-serif">${title}</text>
-  <text x="80" y="265" font-size="30" fill="#fde68a" font-family="Arial, sans-serif">Ruh hali: ${mood}</text>
-  <text x="80" y="315" font-size="28" fill="#bae6fd" font-family="Arial, sans-serif">Görsel tarz: ${style}</text>
+  <text x="82" y="126" font-size="24" fill="#93c5fd" font-family="Arial, sans-serif">STORYVISION AI</text>
+  <text x="82" y="172" font-size="27" fill="#c4b5fd" font-family="Arial, sans-serif">${storyTitle}</text>
 
-  <text x="80" y="390" font-size="26" fill="#cbd5e1" font-family="Arial, sans-serif">Sahne promptu:</text>
+  <text x="82" y="245" font-size="55" font-weight="700" fill="#ffffff" font-family="Arial, sans-serif">${title}</text>
+  <text x="82" y="305" font-size="30" fill="#fde68a" font-family="Arial, sans-serif">Ruh hali: ${mood}</text>
+  <text x="82" y="352" font-size="28" fill="#bae6fd" font-family="Arial, sans-serif">Görsel tarz: ${style}</text>
+
+  <text x="82" y="405" font-size="25" fill="#cbd5e1" font-family="Arial, sans-serif">Sahne promptu:</text>
   ${renderedPrompt}
 
-  <text x="1070" y="610" text-anchor="middle" font-size="120" fill="#ffffff" opacity="0.12" font-family="Arial, sans-serif">${scene.sceneOrder || scene.order || ""}</text>
+  <text x="1070" y="610" text-anchor="middle" font-size="118" fill="#ffffff" opacity="0.12" font-family="Arial, sans-serif">${scene.sceneOrder || scene.order || ""}</text>
 </svg>
 `.trim();
 };

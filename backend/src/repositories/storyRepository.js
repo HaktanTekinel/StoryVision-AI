@@ -297,7 +297,10 @@ const upsertMediaJob = async ({ storyId, type, status, errorMessage = null }) =>
     await query(
       `
       UPDATE media_job
-      SET status = $3, error_message = $4, updated_at = now()
+      SET
+        status = $3,
+        error_message = $4,
+        updated_at = now()
       WHERE story_id = $1 AND type = $2
       `,
       [storyId, type, status, errorMessage]
