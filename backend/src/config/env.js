@@ -20,8 +20,16 @@ const env = {
   nodeEnv: process.env.NODE_ENV || "development",
   port: Number(process.env.PORT) || 5000,
   corsOrigin: parseCorsOrigins(process.env.CORS_ORIGIN),
+  databaseUrl: process.env.DATABASE_URL || "",
+
   geminiApiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "",
-  geminiModel: process.env.GEMINI_MODEL || "gemini-3.5-flash",
+  geminiTextModel:
+    process.env.GEMINI_TEXT_MODEL ||
+    process.env.GEMINI_MODEL ||
+    "gemini-2.5-flash",
+  geminiImageModel: process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image",
+  geminiTtsModel: process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts",
+  geminiTtsVoice: process.env.GEMINI_TTS_VOICE || "Kore",
 };
 
 const validateEnv = () => {
@@ -35,8 +43,14 @@ const validateEnv = () => {
     errors.push("CORS_ORIGIN bos bir liste olamaz.");
   }
 
+  if (!env.databaseUrl.trim()) {
+    errors.push("DATABASE_URL tanimli olmali.");
+  }
+
   if (!env.geminiApiKey.trim()) {
-    errors.push("GEMINI_API_KEY veya GOOGLE_API_KEY tanimli olmali.");
+    console.warn(
+      "UYARI: GEMINI_API_KEY tanimli degil. Hikaye uretiminde gecici fallback metin kullanilacak."
+    );
   }
 
   if (errors.length > 0) {

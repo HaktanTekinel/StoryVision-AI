@@ -1,9 +1,17 @@
 const { GoogleGenAI } = require("@google/genai");
 const { env } = require("../config/env");
 
-const ai = new GoogleGenAI({
-  apiKey: env.geminiApiKey,
-});
+const hasGeminiConfig = () => Boolean(env.geminiApiKey && env.geminiApiKey.trim());
+
+const createClient = () => {
+  if (!hasGeminiConfig()) {
+    throw new Error("GEMINI_API_KEY tanimli degil.");
+  }
+
+  return new GoogleGenAI({
+    apiKey: env.geminiApiKey,
+  });
+};
 
 const extractJsonPayload = (text) => {
   if (!text) {
@@ -14,7 +22,7 @@ const extractJsonPayload = (text) => {
 
   try {
     return JSON.parse(trimmedText);
-  } catch (error) {
+  } catch {
     const match = trimmedText.match(/\{[\s\S]*\}/);
 
     if (!match) {
@@ -26,14 +34,21 @@ const extractJsonPayload = (text) => {
 };
 
 const generateStructuredText = async ({ systemPrompt, userPrompt, schemaName }) => {
+  const ai = createClient();
+
   const response = await ai.models.generateContent({
-    model: env.geminiModel,
+    model: env.geminiTextModel,
     contents: [
       {
         role: "user",
         parts: [
           {
-            text: `${systemPrompt}\n\nCevabi sadece gecerli JSON olarak ver. Ek aciklama yazma.\n\nAlanlar: ${schemaName}\n\nKullanici istegi: ${userPrompt}`,
+            text: `${systemPrompt}
+
+Cevabi sadece gecerli JSON olarak ver. Ek aciklama yazma.
+Alanlar: ${schemaName}
+
+Kullanici istegi: ${userPrompt}`,
           },
         ],
       },
@@ -44,8 +59,10 @@ const generateStructuredText = async ({ systemPrompt, userPrompt, schemaName }) 
 };
 
 const generateText = async ({ prompt }) => {
+  const ai = createClient();
+
   const response = await ai.models.generateContent({
-    model: env.geminiModel,
+    model: env.geminiTextModel,
     contents: prompt,
   });
 
@@ -53,6 +70,7 @@ const generateText = async ({ prompt }) => {
 };
 
 module.exports = {
+  hasGeminiConfig,
   generateStructuredText,
   generateText,
 };

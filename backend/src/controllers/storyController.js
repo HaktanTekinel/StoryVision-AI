@@ -1,34 +1,50 @@
 const storyService = require("../services/storyService");
 const asyncHandler = require("../utils/asyncHandler");
-const AppError = require("../errors/AppError");
 const { sendSuccess } = require("../utils/apiResponse");
-const { validateStoryPromptInput } = require("../utils/promptValidator");
 
-// Istekten gelen query ve body alanlarini tek yerde toplar
-const collectStoryInput = (req) => {
-  return {
-    ...req.query,
-    ...req.body,
-  };
-};
-
-// Demo hikaye endpointi icin controller
-const getDemoStory = asyncHandler(async (req, res) => {
-  const { isValid, errors, data } = validateStoryPromptInput(collectStoryInput(req));
-
-  if (!isValid) {
-    throw new AppError(`Gecersiz hikaye girdileri: ${errors.join(" ")}`, 400);
-  }
-
-  const story = await storyService.getDemoStory(data);
+const createStory = asyncHandler(async (req, res) => {
+  const story = await storyService.createStory(req.body);
 
   return sendSuccess(res, {
-    statusCode: 200,
-    message: "Hikaye olusturuldu.",
+    statusCode: 201,
+    message: "Hikaye olusturuldu ve veritabanina kaydedildi.",
     data: story,
   });
 });
 
+const getStories = asyncHandler(async (req, res) => {
+  const stories = await storyService.getStories();
+
+  return sendSuccess(res, {
+    statusCode: 200,
+    message: "Hikayeler listelendi.",
+    data: stories,
+  });
+});
+
+const getStoryById = asyncHandler(async (req, res) => {
+  const story = await storyService.getStoryById(req.params.id);
+
+  return sendSuccess(res, {
+    statusCode: 200,
+    message: "Hikaye detayi getirildi.",
+    data: story,
+  });
+});
+
+const deleteStory = asyncHandler(async (req, res) => {
+  const result = await storyService.deleteStory(req.params.id);
+
+  return sendSuccess(res, {
+    statusCode: 200,
+    message: "Hikaye silindi.",
+    data: result,
+  });
+});
+
 module.exports = {
-  getDemoStory,
+  createStory,
+  getStories,
+  getStoryById,
+  deleteStory,
 };

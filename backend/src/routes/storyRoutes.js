@@ -1,10 +1,16 @@
 const express = require("express");
-const { getDemoStory } = require("../controllers/storyController");
+const {
+  createStory,
+  getStories,
+  getStoryById,
+  deleteStory,
+} = require("../controllers/storyController");
 
 const router = express.Router();
 
-// Frontend demo akisi icin sahte hikaye endpoint'i
-router.get("/demo", getDemoStory);
-router.post("/demo", getDemoStory);
+router.get("/", getStories);
+router.post("/generate", createStory);
+router.get("/:id", getStoryById);
+router.delete("/:id", deleteStory);
 
 module.exports = router;
