@@ -1,4 +1,6 @@
 const mediaService = require("../services/mediaService");
+const videoService = require("../services/videoService");
+const subtitleService = require("../services/subtitleService");
 const asyncHandler = require("../utils/asyncHandler");
 const AppError = require("../errors/AppError");
 const { sendSuccess } = require("../utils/apiResponse");
@@ -24,6 +26,26 @@ const generateStoryAudio = asyncHandler(async (req, res) => {
   return sendSuccess(res, {
     statusCode: 200,
     message: "Hikaye metni sese donusturuldu.",
+    data: result,
+  });
+});
+
+const generateStoryVideo = asyncHandler(async (req, res) => {
+  const result = await videoService.generateStoryVideo(req.params.id);
+
+  return sendSuccess(res, {
+    statusCode: 200,
+    message: "Hikaye gorselleri ve sesi kullanilarak video olusturuldu.",
+    data: result,
+  });
+});
+
+const generateStorySubtitles = asyncHandler(async (req, res) => {
+  const result = await subtitleService.generateStorySubtitles(req.params.id);
+
+  return sendSuccess(res, {
+    statusCode: 200,
+    message: "Hikaye videosu icin altyazi olusturuldu.",
     data: result,
   });
 });
@@ -88,6 +110,8 @@ const getDemoVideo = asyncHandler(async (req, res) => {
 module.exports = {
   generateStoryImages,
   generateStoryAudio,
+  generateStoryVideo,
+  generateStorySubtitles,
   getDemoImage,
   getDemoAudio,
   getDemoVideo,

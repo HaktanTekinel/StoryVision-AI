@@ -8,6 +8,8 @@ const {
 const {
   generateStoryImages,
   generateStoryAudio,
+  generateStoryVideo,
+  generateStorySubtitles,
 } = require("../controllers/mediaController");
 
 const router = express.Router();
@@ -17,6 +19,8 @@ router.post("/generate", createStory);
 
 router.post("/:id/images", generateStoryImages);
 router.post("/:id/audio", generateStoryAudio);
+router.post("/:id/video", generateStoryVideo);
+router.post("/:id/subtitles", generateStorySubtitles);
 
 router.get("/:id", getStoryById);
 router.delete("/:id", deleteStory);
