@@ -1,4 +1,4 @@
-const fs = require("fs/promises");
+﻿const fs = require("fs/promises");
 const path = require("path");
 const { execFile } = require("child_process");
 const storyRepository = require("../repositories/storyRepository");
@@ -184,13 +184,216 @@ const createSceneSvgFallback = async ({ story, scene }) => {
   };
 };
 
+const buildCharacterConsistencyProfile = (story) => {
+  const characterName =
+    story.character ||
+    story.characterName ||
+    story.character_name ||
+    story.protagonist ||
+    "the same main character";
+
+  const characterDescription =
+    story.characterDescription ||
+    story.character_description ||
+    story.mainCharacterDescription ||
+    story.main_character_description ||
+    "";
+
+  const visualStyle =
+    story.visualStyle ||
+    story.visual_style ||
+    "cinematic anime-inspired digital illustration";
+
+  const profile = [
+    `MAIN CHARACTER CONSISTENCY LOCK: every scene must show the exact same protagonist: ${characterName}.`,
+    "The protagonist must keep the same face shape, same hairstyle, same hair color, same eye color, same age, same body type, same outfit, same accessories, same weapon if any, and same overall visual identity across all images.",
+    "The character is the same person in every scene, like frames from one animated movie.",
+    "Only the pose, facial expression, camera angle, lighting, and background may change.",
+    "Do not redesign the protagonist between scenes.",
+    `Consistent art style for the whole story: ${visualStyle}.`,
+  ];
+
+  if (characterDescription) {
+    profile.push(`Fixed protagonist description: ${characterDescription}.`);
+  }
+
+  return profile.join(" ");
+};
+
+const buildHuggingFacePrompt = ({ story, scene }) => {
+  const characterProfile = buildCharacterConsistencyProfile(story);
+
+  const sceneTitle = scene.title || `Scene ${scene.sceneOrder || scene.order || ""}`;
+  const sceneDescription =
+    scene.prompt ||
+    scene.description ||
+    scene.sceneDescription ||
+    "A cinematic story scene";
+
+  const storyContext = [
+    `Story title: ${story.title || "StoryVision AI story"}.`,
+    `Genre: ${story.genre || "fantasy adventure"}.`,
+    `Tone: ${story.tone || "dramatic and cinematic"}.`,
+    `Main location: ${story.place || story.setting || "atmospheric story location"}.`,
+  ].join(" ");
+
+  const visualQuality = [
+    "wide cinematic 16:9 composition",
+    "professional anime movie still",
+    "high quality digital illustration",
+    "detailed background",
+    "dramatic lighting",
+    "sharp focus",
+    "clean line art",
+    "coherent character anatomy",
+    "consistent protagonist design",
+    "no text in the image",
+  ].join(", ");
+
+  return [
+    characterProfile,
+    storyContext,
+    `CURRENT SCENE TITLE: ${sceneTitle}.`,
+    `CURRENT SCENE DESCRIPTION: ${sceneDescription}.`,
+    `Current scene mood: ${scene.mood || story.tone || "cinematic"}.`,
+    visualQuality,
+    "IMPORTANT: The protagonist must look identical across all generated story scenes. Keep the same outfit and facial features. Do not create a new character.",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .slice(0, 2200);
+};
+
+const buildHuggingFaceNegativePrompt = () => {
+  return [
+    "different character",
+    "character redesign",
+    "inconsistent protagonist",
+    "new protagonist",
+    "different face",
+    "different hairstyle",
+    "different hair color",
+    "different eye color",
+    "different outfit",
+    "different age",
+    "different gender",
+    "multiple protagonists",
+    "duplicate protagonist",
+    "random character",
+    "text",
+    "subtitle",
+    "caption",
+    "watermark",
+    "logo",
+    "signature",
+    "ui",
+    "speech bubble",
+    "blurry",
+    "low quality",
+    "bad anatomy",
+    "distorted face",
+    "deformed hands",
+    "extra fingers",
+    "missing fingers",
+    "mutated body",
+  ].join(", ");
+};
+
+const createSceneImageWithHuggingFace = async ({ story, scene }) => {
+  await ensureUploadFolders();
+
+  const apiToken = env.hfApiToken || process.env.HF_API_TOKEN || "";
+
+  if (!apiToken.trim()) {
+    throw new Error("HF_API_TOKEN tanimli degil. Hugging Face gorsel uretimi icin token gerekli.");
+  }
+
+  const { InferenceClient } = await import("@huggingface/inference");
+  const client = new InferenceClient(apiToken);
+
+  const model =
+    env.hfImageModel ||
+    process.env.HF_IMAGE_MODEL ||
+    "Tongyi-MAI/Z-Image-Turbo";
+
+  const provider =
+    env.hfImageProvider ||
+    process.env.HF_IMAGE_PROVIDER ||
+    "fal-ai";
+
+  const prompt = buildHuggingFacePrompt({ story, scene });
+  const negativePrompt = buildHuggingFaceNegativePrompt();
+
+  console.log("HF IMAGE CLIENT DEBUG:", {
+    provider,
+    model,
+    sceneOrder: scene.sceneOrder || scene.order,
+  });
+
+  let imageResult;
+
+  try {
+    imageResult = await client.textToImage({
+      provider,
+      model,
+      inputs: prompt,
+      parameters: {
+        negative_prompt: negativePrompt,
+        width: 1024,
+        height: 576,
+        num_inference_steps: 24,
+        guidance_scale: 8,
+      },
+    });
+  } catch (error) {
+    console.error("Hugging Face client hatasi:", {
+      name: error.name,
+      message: error.message,
+      cause: error.cause,
+      stack: error.stack,
+    });
+
+    throw new Error(`Hugging Face gorsel uretim hatasi: ${error.message}`);
+  }
+
+  let buffer;
+
+  if (Buffer.isBuffer(imageResult)) {
+    buffer = imageResult;
+  } else if (imageResult instanceof ArrayBuffer) {
+    buffer = Buffer.from(imageResult);
+  } else if (imageResult?.arrayBuffer) {
+    const arrayBuffer = await imageResult.arrayBuffer();
+    buffer = Buffer.from(arrayBuffer);
+  } else if (imageResult?.data) {
+    buffer = Buffer.from(imageResult.data);
+  } else {
+    throw new Error("Hugging Face beklenen gorsel verisini dondurmedi.");
+  }
+
+  const uniqueSuffix = Date.now();
+  const fileName = `${story.id}-${scene.sceneOrder}-${slugify(scene.title)}-${uniqueSuffix}.png`;
+  const absolutePath = path.join(imageUploadDir, fileName);
+  const relativePath = `/uploads/images/${fileName}`;
+  const publicUrl = `${getPublicBaseUrl()}${relativePath}`;
+
+  await fs.writeFile(absolutePath, buffer);
+
+  return {
+    imageUrl: publicUrl,
+    imagePath: relativePath,
+    provider: `huggingface:${provider}`,
+  };
+};
+
 const createSceneImageWithPollinations = async ({ story, scene }) => {
   await ensureUploadFolders();
 
   const prompt =
+    `${buildCharacterConsistencyProfile(story)} ` +
     `${scene.prompt || scene.description || story.title}. ` +
     `cinematic, detailed, ${story.visualStyle || "storybook style"}, ` +
-    `no text, no watermark`;
+    `wide 16:9 image, no text, no watermark`;
 
   const uniqueSuffix = Date.now();
   const fileName = `${story.id}-${scene.sceneOrder}-${slugify(scene.title)}-${uniqueSuffix}.jpg`;
@@ -206,7 +409,7 @@ const createSceneImageWithPollinations = async ({ story, scene }) => {
   const requestUrl =
     `${pollinationsBaseUrl}/prompt/${encodeURIComponent(prompt)}` +
     `?width=1280&height=720&model=${encodeURIComponent(pollinationsModel)}` +
-    `&nologo=true&private=true&enhance=true&seed=${uniqueSuffix}`;
+    `&seed=${uniqueSuffix}`;
 
   const { buffer, contentType } = await downloadBuffer(requestUrl);
 
@@ -372,19 +575,30 @@ const generateStoryImages = async (storyId) => {
   try {
     const updatedScenes = [];
     const providers = [];
+    const imageProvider = String(
+      env.imageProvider || process.env.IMAGE_PROVIDER || "huggingface"
+    ).toLowerCase();
 
     for (const scene of story.scenes.slice(0, 3)) {
       let image;
 
       try {
-        const imageProvider = env.imageProvider || process.env.IMAGE_PROVIDER || "pollinations";
-
-        if (imageProvider === "pollinations") {
+        if (imageProvider === "huggingface" || imageProvider === "hf") {
+          image = await createSceneImageWithHuggingFace({ story, scene });
+        } else if (imageProvider === "pollinations") {
           image = await createSceneImageWithPollinations({ story, scene });
-        } else {
+        } else if (imageProvider === "svg-fallback") {
           image = await createSceneSvgFallback({ story, scene });
+        } else {
+          throw new Error(`Bilinmeyen IMAGE_PROVIDER degeri: ${imageProvider}`);
         }
       } catch (providerError) {
+        const fallbackEnabled = env.imageFallbackEnabled !== false;
+
+        if (!fallbackEnabled) {
+          throw providerError;
+        }
+
         console.warn(
           "Gorsel AI saglayicisi basarisiz oldu, SVG fallback kullaniliyor:",
           providerError.message
@@ -419,7 +633,7 @@ const generateStoryImages = async (storyId) => {
     return {
       storyId,
       status: "ready",
-      provider: providers.includes("pollinations") ? "pollinations" : "svg-fallback",
+      provider: [...new Set(providers)].join(", "),
       count: updatedScenes.length,
       images: updatedScenes,
     };

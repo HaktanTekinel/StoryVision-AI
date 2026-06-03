@@ -8,6 +8,11 @@ const { env } = require("../config/env");
 const backendRoot = path.join(__dirname, "../..");
 const videoUploadDir = path.join(backendRoot, "uploads", "videos");
 
+const VIDEO_WIDTH = 1280;
+const VIDEO_HEIGHT = 720;
+const VIDEO_FPS = 25;
+const TRANSITION_DURATION = 1;
+
 const getPublicBaseUrl = () => {
   return process.env.PUBLIC_BASE_URL || `http://127.0.0.1:${env.port}`;
 };
@@ -33,17 +38,64 @@ const toAbsoluteBackendPath = (relativePath) => {
   return path.join(backendRoot, cleanPath);
 };
 
-const runCommand = (file, args) => {
+const runCommand = (file, args, options = {}) => {
   return new Promise((resolve, reject) => {
-    execFile(file, args, { windowsHide: true }, (error, stdout, stderr) => {
-      if (error) {
-        reject(new Error(stderr || stdout || error.message));
-        return;
-      }
+    execFile(
+      file,
+      args,
+      {
+        windowsHide: true,
+        ...options,
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(stderr || stdout || error.message));
+          return;
+        }
 
-      resolve({ stdout, stderr });
-    });
+        resolve({ stdout, stderr });
+      }
+    );
   });
+};
+
+const getFfmpegPath = () => {
+  return process.env.FFMPEG_PATH || env.ffmpegPath || "ffmpeg";
+};
+
+const getFfprobePath = () => {
+  const ffmpegPath = getFfmpegPath();
+
+  if (ffmpegPath === "ffmpeg") {
+    return "ffprobe";
+  }
+
+  const parsedPath = path.parse(ffmpegPath);
+  const extension = parsedPath.ext || ".exe";
+
+  return path.join(parsedPath.dir, `ffprobe${extension}`);
+};
+
+const getMediaDurationSeconds = async (filePath) => {
+  const ffprobePath = getFfprobePath();
+
+  const { stdout } = await runCommand(ffprobePath, [
+    "-v",
+    "error",
+    "-show_entries",
+    "format=duration",
+    "-of",
+    "default=noprint_wrappers=1:nokey=1",
+    filePath,
+  ]);
+
+  const duration = Number.parseFloat(String(stdout).trim());
+
+  if (!Number.isFinite(duration) || duration <= 0) {
+    throw new Error(`Medya suresi okunamadi: ${filePath}`);
+  }
+
+  return duration;
 };
 
 const ensureFolders = async () => {
@@ -67,68 +119,93 @@ const getReadySceneImages = (story) => {
     .slice(0, 3);
 };
 
-const buildVideoFilter = ({ sceneCount, sceneDuration, transitionDuration }) => {
+const getSceneDuration = ({ totalDuration, sceneCount }) => {
+  if (sceneCount <= 1) {
+    return totalDuration;
+  }
+
+  return (totalDuration + TRANSITION_DURATION * (sceneCount - 1)) / sceneCount;
+};
+
+const buildVideoFilter = ({ sceneCount, sceneDuration, totalDuration }) => {
   const filters = [];
 
   for (let index = 0; index < sceneCount; index += 1) {
     filters.push(
-      `[${index}:v]scale=1280:720:force_original_aspect_ratio=decrease,` +
-        `pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,format=rgba,setpts=PTS-STARTPTS[v${index}]`
+      `[${index}:v]scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:force_original_aspect_ratio=decrease,` +
+        `pad=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2,` +
+        `setsar=1,fps=${VIDEO_FPS},format=rgba,setpts=PTS-STARTPTS[v${index}]`
     );
   }
 
   if (sceneCount === 1) {
-    filters.push("[v0]format=yuv420p[vout]");
+    filters.push(
+      `[v0]tpad=stop_mode=clone:stop_duration=3,trim=duration=${totalDuration.toFixed(
+        3
+      )},format=yuv420p[vout]`
+    );
+
     return filters.join(";");
   }
 
-  const firstOffset = Math.max(1, sceneDuration - transitionDuration);
+  let previousLabel = "v0";
 
-  filters.push(
-    `[v0][v1]xfade=transition=fade:duration=${transitionDuration}:offset=${firstOffset}[x1]`
-  );
+  for (let index = 1; index < sceneCount; index += 1) {
+    const outputLabel = index === sceneCount - 1 ? "vxfade" : `x${index}`;
+    const offset = Math.max(
+      0.1,
+      index * sceneDuration - index * TRANSITION_DURATION
+    );
 
-  if (sceneCount === 2) {
-    filters.push("[x1]format=yuv420p[vout]");
-    return filters.join(";");
+    filters.push(
+      `[${previousLabel}][v${index}]xfade=transition=fade:duration=${TRANSITION_DURATION}:offset=${offset.toFixed(
+        3
+      )}[${outputLabel}]`
+    );
+
+    previousLabel = outputLabel;
   }
 
-  const secondOffset = Math.max(
-    firstOffset + 1,
-    sceneDuration * 2 - transitionDuration * 2
-  );
-
   filters.push(
-    `[x1][v2]xfade=transition=fade:duration=${transitionDuration}:offset=${secondOffset},format=yuv420p[vout]`
+    `[${previousLabel}]tpad=stop_mode=clone:stop_duration=3,trim=duration=${totalDuration.toFixed(
+      3
+    )},format=yuv420p[vout]`
   );
 
   return filters.join(";");
 };
 
 const createFallbackVideo = async ({ audioPath, outputPath, totalDuration }) => {
-  const ffmpegPath = process.env.FFMPEG_PATH || "ffmpeg";
+  const ffmpegPath = getFfmpegPath();
 
   await runCommand(ffmpegPath, [
     "-y",
     "-f",
     "lavfi",
     "-i",
-    `color=c=0x111827:s=1280x720:d=${totalDuration}`,
+    `color=c=0x111827:s=${VIDEO_WIDTH}x${VIDEO_HEIGHT}:r=${VIDEO_FPS}:d=${totalDuration.toFixed(
+      3
+    )}`,
     "-i",
     audioPath,
     "-map",
     "0:v",
     "-map",
     "1:a",
-    "-shortest",
+    "-t",
+    totalDuration.toFixed(3),
     "-c:v",
     "libx264",
+    "-preset",
+    "veryfast",
     "-pix_fmt",
     "yuv420p",
     "-c:a",
     "aac",
     "-b:a",
     "192k",
+    "-movflags",
+    "+faststart",
     outputPath,
   ]);
 };
@@ -138,22 +215,23 @@ const createVideoWithImages = async ({
   audioPath,
   outputPath,
   sceneDuration,
+  totalDuration,
 }) => {
-  const ffmpegPath = process.env.FFMPEG_PATH || "ffmpeg";
-  const transitionDuration = 1;
+  const ffmpegPath = getFfmpegPath();
   const args = [];
 
   imagePaths.forEach((imagePath) => {
-    args.push("-loop", "1", "-t", String(sceneDuration), "-i", imagePath);
+    args.push("-loop", "1", "-t", sceneDuration.toFixed(3), "-i", imagePath);
   });
 
   args.push("-i", audioPath);
 
   const audioInputIndex = imagePaths.length;
+
   const filterComplex = buildVideoFilter({
     sceneCount: imagePaths.length,
     sceneDuration,
-    transitionDuration,
+    totalDuration,
   });
 
   args.push(
@@ -163,15 +241,20 @@ const createVideoWithImages = async ({
     "[vout]",
     "-map",
     `${audioInputIndex}:a`,
-    "-shortest",
+    "-t",
+    totalDuration.toFixed(3),
     "-c:v",
     "libx264",
+    "-preset",
+    "veryfast",
     "-pix_fmt",
     "yuv420p",
     "-c:a",
     "aac",
     "-b:a",
     "192k",
+    "-movflags",
+    "+faststart",
     outputPath
   );
 
@@ -221,12 +304,12 @@ async function generateStoryVideo(storyId) {
     await assertFileExists(imagePath, "Sahne gorsel dosyasi bulunamadi.");
   }
 
-  const durationFromAudio = Number(story.audioDurationSeconds || 0);
-  const sceneDuration = Math.max(
-    4,
-    Math.ceil((durationFromAudio || 18) / scenes.length)
-  );
-  const totalDuration = sceneDuration * scenes.length;
+  const realAudioDuration = await getMediaDurationSeconds(audioPath);
+  const totalDuration = Math.max(3, realAudioDuration);
+  const sceneDuration = getSceneDuration({
+    totalDuration,
+    sceneCount: scenes.length,
+  });
 
   const fileName = `${story.id}-${slugify(story.title)}-video.mp4`;
   const absoluteVideoPath = path.join(videoUploadDir, fileName);
@@ -260,6 +343,7 @@ async function generateStoryVideo(storyId) {
         audioPath,
         outputPath: absoluteVideoPath,
         sceneDuration,
+        totalDuration,
       });
     } catch (videoError) {
       console.warn(
@@ -302,6 +386,8 @@ async function generateStoryVideo(storyId) {
       transitionEffect: "fade",
       sceneCount: scenes.length,
       sceneDuration,
+      audioDurationSeconds: totalDuration,
+      videoDurationSeconds: totalDuration,
     };
   } catch (error) {
     await videoRepository.upsertStoryVideo({

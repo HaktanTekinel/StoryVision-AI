@@ -29,11 +29,23 @@ function getScenes(story) {
 }
 
 function getImageUrl(scene) {
-  return scene.url || scene.imageUrl || scene.image_url || scene.path || scene.filePath;
+  return (
+    scene.url ||
+    scene.imageUrl ||
+    scene.image_url ||
+    scene.path ||
+    scene.filePath
+  );
 }
 
 function getAudioUrl(story) {
-  return story.audioUrl || story.audio_url || story.audioPath || story.audio_path || story.voiceUrl;
+  return (
+    story.audioUrl ||
+    story.audio_url ||
+    story.audioPath ||
+    story.audio_path ||
+    story.voiceUrl
+  );
 }
 
 function getVideoUrl(story) {
@@ -41,7 +53,12 @@ function getVideoUrl(story) {
 }
 
 function getSubtitleUrl(story) {
-  return story.subtitleUrl || story.subtitle_url || story.subtitlePath || story.subtitle_path;
+  return (
+    story.subtitleUrl ||
+    story.subtitle_url ||
+    story.subtitlePath ||
+    story.subtitle_path
+  );
 }
 
 function withCacheBust(url) {
@@ -60,6 +77,7 @@ export default function StoryDetail() {
   const [isLoading, setIsLoading] = useState(true);
   const [busyStep, setBusyStep] = useState("");
   const [error, setError] = useState("");
+  const [selectedSceneIndex, setSelectedSceneIndex] = useState(null);
 
   async function loadStory() {
     const result = await getStoryById(storyId);
@@ -84,13 +102,77 @@ export default function StoryDetail() {
   const paragraphs = useMemo(() => (story ? getParagraphs(story) : []), [story]);
   const scenes = useMemo(() => (story ? getScenes(story) : []), [story]);
 
+  const galleryScenes = useMemo(() => {
+    return scenes
+      .map((scene, originalIndex) => ({
+        scene,
+        originalIndex,
+        imageUrl: getImageUrl(scene),
+      }))
+      .filter((item) => Boolean(item.imageUrl));
+  }, [scenes]);
+
+  const selectedGalleryItem =
+    selectedSceneIndex !== null ? galleryScenes[selectedSceneIndex] : null;
+
   const audioUrl = story ? getAudioUrl(story) : "";
   const videoUrl = story ? getVideoUrl(story) : "";
   const subtitleUrl = story ? getSubtitleUrl(story) : "";
 
- const audioPlayerUrl = story ? withCacheBust(audioUrl) : "";
-const videoPlayerUrl = story ? withCacheBust(videoUrl) : "";
-const subtitlePlayerUrl = story ? withCacheBust(subtitleUrl) : "";
+  const audioPlayerUrl = story ? withCacheBust(audioUrl) : "";
+  const videoPlayerUrl = story ? withCacheBust(videoUrl) : "";
+  const subtitlePlayerUrl = story ? withCacheBust(subtitleUrl) : "";
+
+  function openSceneLightbox(galleryIndex) {
+    if (galleryIndex < 0) return;
+    setSelectedSceneIndex(galleryIndex);
+  }
+
+  function closeSceneLightbox() {
+    setSelectedSceneIndex(null);
+  }
+
+  function showPreviousImage() {
+    setSelectedSceneIndex((current) => {
+      if (galleryScenes.length === 0) return null;
+      if (current === null) return 0;
+
+      return (current - 1 + galleryScenes.length) % galleryScenes.length;
+    });
+  }
+
+  function showNextImage() {
+    setSelectedSceneIndex((current) => {
+      if (galleryScenes.length === 0) return null;
+      if (current === null) return 0;
+
+      return (current + 1) % galleryScenes.length;
+    });
+  }
+
+  useEffect(() => {
+    if (selectedSceneIndex === null) return undefined;
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        closeSceneLightbox();
+      }
+
+      if (event.key === "ArrowLeft") {
+        showPreviousImage();
+      }
+
+      if (event.key === "ArrowRight") {
+        showNextImage();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [selectedSceneIndex, galleryScenes.length]);
 
   async function handleGenerate(step) {
     const actions = {
@@ -123,7 +205,10 @@ const subtitlePlayerUrl = story ? withCacheBust(subtitleUrl) : "";
 
   if (isLoading) {
     return (
-      <PageShell title="Hikâye yükleniyor" description="Çalışma alanın hazırlanıyor...">
+      <PageShell
+        title="Hikâye yükleniyor"
+        description="Çalışma alanın hazırlanıyor..."
+      >
         <Card className="loading-card">Lütfen bekle.</Card>
       </PageShell>
     );
@@ -152,7 +237,11 @@ const subtitlePlayerUrl = story ? withCacheBust(subtitleUrl) : "";
     <PageShell
       eyebrow="Hikâye çalışma alanı"
       title={story.title || "Başlıksız Hikâye"}
-      description={story.synopsis || story.summary || "Hikâyenin üretim akışını buradan takip edebilirsin."}
+      description={
+        story.synopsis ||
+        story.summary ||
+        "Hikâyenin üretim akışını buradan takip edebilirsin."
+      }
       actions={
         <div className="detail-actions">
           <Button as={Link} to="/stories" variant="secondary" size="sm">
@@ -198,7 +287,9 @@ const subtitlePlayerUrl = story ? withCacheBust(subtitleUrl) : "";
 
           <Card className="mini-panel">
             <span>Görsel Tarz</span>
-            <strong>{story.visualStyle || story.visual_style || "Belirtilmedi"}</strong>
+            <strong>
+              {story.visualStyle || story.visual_style || "Belirtilmedi"}
+            </strong>
           </Card>
         </aside>
       </div>
@@ -210,29 +301,53 @@ const subtitlePlayerUrl = story ? withCacheBust(subtitleUrl) : "";
         </div>
 
         {scenes.length === 0 ? (
-          <Card className="loading-card">Bu hikâye için görseller henüz hazırlanmadı.</Card>
+          <Card className="loading-card">
+            Bu hikâye için görseller henüz hazırlanmadı.
+          </Card>
         ) : (
           <div className="scene-grid">
             {scenes.map((scene, index) => {
               const imageUrl = getImageUrl(scene);
+              const galleryIndex = galleryScenes.findIndex(
+                (item) => item.originalIndex === index
+              );
 
               return (
-                <article className="scene-card" key={scene.id || scene.title || imageUrl || index}>
-                  <div className="scene-image">
+                <article
+                  className="scene-card"
+                  key={scene.id || scene.title || imageUrl || index}
+                >
+                  <div className={`scene-image ${imageUrl ? "has-image" : ""}`}>
                     {imageUrl ? (
-                      <img
-                        src={withCacheBust(imageUrl, story)}
-                        alt={scene.title || `Sahne ${index + 1}`}
-                      />
+                      <button
+                        type="button"
+                        className="scene-image-button"
+                        onClick={() => openSceneLightbox(galleryIndex)}
+                        aria-label={`${
+                          scene.title || `Sahne ${index + 1}`
+                        } görselini büyük aç`}
+                      >
+                        <img
+                          src={withCacheBust(imageUrl)}
+                          alt={scene.title || `Sahne ${index + 1}`}
+                        />
+                        <span className="scene-zoom-hint">Tam ekran gör</span>
+                      </button>
                     ) : (
                       <span>{scene.title || `Sahne ${index + 1}`}</span>
                     )}
                   </div>
 
                   <div className="scene-body">
-                    {(scene.mood || scene.status) && <Badge>{scene.mood || scene.status}</Badge>}
+                    {(scene.mood || scene.status) && (
+                      <Badge>{scene.mood || scene.status}</Badge>
+                    )}
                     <h3>{scene.title || `Sahne ${index + 1}`}</h3>
-                    <p>{scene.description || scene.prompt || "Sahne açıklaması henüz alınamadı."}</p>
+                    <p>
+                      {scene.description ||
+                        scene.prompt ||
+                        "Sahne açıklaması henüz alınamadı."}
+                    </p>
                   </div>
                 </article>
               );
@@ -247,16 +362,24 @@ const subtitlePlayerUrl = story ? withCacheBust(subtitleUrl) : "";
           <h2>Ses, video ve altyazı</h2>
         </div>
 
-        <MediaPreview story={story} busyStep={busyStep} onGenerate={handleGenerate} />
+        <MediaPreview
+          story={story}
+          busyStep={busyStep}
+          onGenerate={handleGenerate}
+        />
 
         {audioUrl && (
           <Card className="loading-card">
             <h3>Seslendirme</h3>
             <audio key={audioPlayerUrl} controls src={audioPlayerUrl} />
-            {(story.audioStatus || story.audio_status || story.audioDurationSeconds) && (
+            {(story.audioStatus ||
+              story.audio_status ||
+              story.audioDurationSeconds) && (
               <p>
                 Durum: {story.audioStatus || story.audio_status || "hazır"}
-                {story.audioDurationSeconds ? ` • Süre: ${story.audioDurationSeconds} sn` : ""}
+                {story.audioDurationSeconds
+                  ? ` • Süre: ${story.audioDurationSeconds} sn`
+                  : ""}
               </p>
             )}
           </Card>
@@ -265,7 +388,12 @@ const subtitlePlayerUrl = story ? withCacheBust(subtitleUrl) : "";
         {videoUrl && (
           <Card className="loading-card">
             <h3>Video</h3>
-            <video key={videoPlayerUrl} controls src={videoPlayerUrl} className="video-player">
+            <video
+              key={videoPlayerUrl}
+              controls
+              src={videoPlayerUrl}
+              className="video-player"
+            >
               {subtitleUrl && (
                 <track
                   kind="subtitles"
@@ -288,6 +416,76 @@ const subtitlePlayerUrl = story ? withCacheBust(subtitleUrl) : "";
           </Card>
         )}
       </section>
+
+      {selectedGalleryItem && (
+        <div
+          className="image-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Sahne görseli önizleme"
+          onClick={closeSceneLightbox}
+        >
+          <button
+            type="button"
+            className="image-lightbox-close"
+            onClick={closeSceneLightbox}
+            aria-label="Görseli kapat"
+          >
+            ×
+          </button>
+
+          {galleryScenes.length > 1 && (
+            <button
+              type="button"
+              className="image-lightbox-arrow image-lightbox-arrow-left"
+              onClick={(event) => {
+                event.stopPropagation();
+                showPreviousImage();
+              }}
+              aria-label="Önceki görsel"
+            >
+              ‹
+            </button>
+          )}
+
+          <figure
+            className="image-lightbox-content"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <img
+              src={withCacheBust(selectedGalleryItem.imageUrl)}
+              alt={
+                selectedGalleryItem.scene.title ||
+                `Sahne ${selectedGalleryItem.originalIndex + 1}`
+              }
+            />
+
+            <figcaption>
+              <strong>
+                {selectedGalleryItem.scene.title ||
+                  `Sahne ${selectedGalleryItem.originalIndex + 1}`}
+              </strong>
+              <span>
+                {selectedSceneIndex + 1} / {galleryScenes.length}
+              </span>
+            </figcaption>
+          </figure>
+
+          {galleryScenes.length > 1 && (
+            <button
+              type="button"
+              className="image-lightbox-arrow image-lightbox-arrow-right"
+              onClick={(event) => {
+                event.stopPropagation();
+                showNextImage();
+              }}
+              aria-label="Sonraki görsel"
+            >
+              ›
+            </button>
+          )}
+        </div>
+      )}
     </PageShell>
   );
 }

@@ -1,4 +1,4 @@
-const dotenv = require("dotenv");
+﻿const dotenv = require("dotenv");
 const path = require("path");
 
 dotenv.config({
@@ -27,14 +27,29 @@ const env = {
     process.env.GEMINI_TEXT_MODEL ||
     process.env.GEMINI_MODEL ||
     "gemini-2.5-flash",
-  geminiImageModel: process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image",
+  geminiImageModel: process.env.GEMINI_IMAGE_MODEL || "imagen-4.0-fast-generate-001",
   geminiTtsModel: process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts",
   geminiTtsVoice: process.env.GEMINI_TTS_VOICE || "Kore",
 
-  imageProvider: process.env.IMAGE_PROVIDER || "pollinations",
+  imageProvider: process.env.IMAGE_PROVIDER || "huggingface",
+  imageFallbackEnabled: process.env.IMAGE_FALLBACK_ENABLED !== "false",
+
   pollinationsBaseUrl:
     process.env.POLLINATIONS_BASE_URL || "https://image.pollinations.ai",
   pollinationsModel: process.env.POLLINATIONS_MODEL || "flux",
+
+  aiHordeApiKey: process.env.AI_HORDE_API_KEY || "0000000000",
+  aiHordeBaseUrl: process.env.AI_HORDE_BASE_URL || "https://aihorde.net/api/v2",
+  aiHordeModel: process.env.AI_HORDE_MODEL || "auto",
+  aiHordeClientAgent: process.env.AI_HORDE_CLIENT_AGENT || "StoryVisionAI:1.0",
+  aiHordeTimeoutSeconds: Number(process.env.AI_HORDE_TIMEOUT_SECONDS) || 600,
+
+  hfApiToken: process.env.HF_API_TOKEN || "",
+  hfImageModel: process.env.HF_IMAGE_MODEL || "Tongyi-MAI/Z-Image-Turbo",
+  hfImageProvider: process.env.HF_IMAGE_PROVIDER || "fal-ai",
+  hfImageBaseUrl:
+    process.env.HF_IMAGE_BASE_URL || "https://api-inference.huggingface.co/models",
+  hfImageTimeoutSeconds: Number(process.env.HF_IMAGE_TIMEOUT_SECONDS) || 180,
 
   ttsProvider: process.env.TTS_PROVIDER || "windows",
   elevenlabsApiKey: process.env.ELEVENLABS_API_KEY || "",
@@ -68,8 +83,20 @@ const validateEnv = () => {
     );
   }
 
-  if (env.imageProvider === "pollinations") {
-    console.warn("BILGI: Gorsel uretimi Pollinations ile denenip fallback olarak SVG kullanilacak.");
+  if (String(env.imageProvider).toLowerCase() === "huggingface" && !env.hfApiToken.trim()) {
+    errors.push("IMAGE_PROVIDER=huggingface icin HF_API_TOKEN tanimli olmali.");
+  }
+
+  if (String(env.imageProvider).toLowerCase() === "huggingface") {
+    console.warn("BILGI: Gorsel uretimi Hugging Face ile yapilacak.");
+  }
+
+  if (String(env.imageProvider).toLowerCase() === "aihorde") {
+    console.warn("BILGI: Gorsel uretimi AI Horde ile yapilacak. Anonymous key kullaniliyorsa bekleme suresi olabilir.");
+  }
+
+  if (String(env.imageProvider).toLowerCase() === "pollinations") {
+    console.warn("BILGI: Gorsel uretimi Pollinations ile deneniyor.");
   }
 
   if (env.ttsProvider === "elevenlabs" && !env.elevenlabsApiKey.trim()) {
@@ -89,3 +116,4 @@ module.exports = {
   env,
   validateEnv,
 };
+
